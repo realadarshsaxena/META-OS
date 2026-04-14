@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-accent: #BDFF00;
+  --color-secondary: #7000FF;
+  --color-muted: #444444;
+}
+
+@layer base {
+  body {
+    @apply bg-[#050505] text-white font-sans antialiased;
+  }
+}
+
+.glass {
+  @apply bg-white/[0.05] backdrop-blur-xl border border-white/10;
+}
+
+.hero-title {
+  @apply text-[120px] font-[900] leading-[0.85] tracking-[-0.04em] uppercase;
+}
+
+.search-input-theme {
+  @apply w-full bg-transparent border-2 border-[#444444] p-6 text-2xl text-white rounded-[20px] outline-none transition-all focus:border-[#7000FF];
+}
+
+.ai-badge-theme {
+  @apply bg-[#7000FF] text-white px-3 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider mb-4 inline-block;
+}
+
+.neon-text {
+  @apply text-[#BDFF00];
+}
+
+.neon-glow {
+  box-shadow: 0 0 30px rgba(189, 255, 0, 0.2);
+}
+

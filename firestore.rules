@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: /users/{uid}/history/{searchId}
+    // Fields:
+    //   - uid: string (required)
+    //   - query: string (required, max 500 chars)
+    //   - timestamp: timestamp (required)
+    //   - aiInsight: string (optional, max 5000 chars)
+    //
+    // Collection: /users/{uid}/bookmarks/{bookmarkId}
+    // Fields:
+    //   - uid: string (required)
+    //   - title: string (required, max 500 chars)
+    //   - url: string (required, url format)
+    //   - snippet: string (optional, max 1000 chars)
+    //   - timestamp: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "adarshsaxena613@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp &&
+             (!('role' in data) || (data.role is string && data.role in ['user', 'admin']));
+    }
+
+    function isValidSearch(data) {
+      return data.keys().hasAll(['uid', 'query', 'timestamp']) &&
+             data.uid == request.auth.uid &&
+             data.query is string && data.query.size() <= 500 &&
+             data.timestamp is timestamp &&
+             (!('aiInsight' in data) || (data.aiInsight is string && data.aiInsight.size() <= 5000));
+    }
+
+    function isValidBookmark(data) {
+      return data.keys().hasAll(['uid', 'title', 'url', 'timestamp']) &&
+             data.uid == request.auth.uid &&
+             data.title is string && data.title.size() <= 500 &&
+             isValidUrl(data.url) &&
+             data.timestamp is timestamp &&
+             (!('snippet' in data) || (data.snippet is string && data.snippet.size() <= 1000));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && 
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      (request.resource.data.role == resource.data.role || isAdmin());
+
+      match /history/{searchId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidSearch(request.resource.data);
+        allow delete: if isOwner(uid);
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidBookmark(request.resource.data);
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

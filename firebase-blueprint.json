@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "SearchHistory": {
+      "title": "SearchHistory",
+      "description": "History of user searches",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "query": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "aiInsight": { "type": "string" }
+      },
+      "required": ["uid", "query", "timestamp"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Saved search results",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "title": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "snippet": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "title", "url", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{uid}/history/{searchId}": {
+      "schema": "SearchHistory",
+      "description": "User search history"
+    },
+    "/users/{uid}/bookmarks/{bookmarkId}": {
+      "schema": "Bookmark",
+      "description": "User bookmarked results"
+    }
+  }
+}
