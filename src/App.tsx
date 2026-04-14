@@ -44,6 +44,7 @@ import {
   serverTimestamp, 
   deleteDoc, 
   doc,
+  getDocFromServer,
   Timestamp
 } from 'firebase/firestore';
 
@@ -90,7 +91,23 @@ export default function App() {
   const [imageAnalysis, setImageAnalysis] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Connection Test
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error: any) {
+        if (error.message?.includes('the client is offline')) {
+          setFirestoreError("Firebase is offline. Please check your configuration or authorized domains.");
+        }
+      }
+    };
+    testConnection();
+  }, []);
 
   // Auth Listener
   useEffect(() => {
@@ -150,11 +167,12 @@ export default function App() {
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
+    setIsAiLoading(true);
     setAiInsight(null);
     setActiveTab('search');
 
     try {
-      // 1. Simulate Meta Search Results
+      // 1. Simulate Meta Search Results (Instant)
       const mockResults: SearchResult[] = [
         {
           id: '1',
@@ -179,8 +197,9 @@ export default function App() {
         }
       ];
       setResults(mockResults);
+      setIsSearching(false); // Stop main loading as results are ready
 
-      // 2. Get AI Insights with Google Search Grounding
+      // 2. Get AI Insights (Async)
       try {
         const result = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -204,11 +223,13 @@ export default function App() {
       } catch (aiError) {
         console.error("AI Insight failed", aiError);
         setAiInsight("AI is currently vibing elsewhere. Check back in a bit! 🛸");
+      } finally {
+        setIsAiLoading(false);
       }
     } catch (error) {
       console.error("Search failed", error);
-    } finally {
       setIsSearching(false);
+      setIsAiLoading(false);
     }
   };
 
@@ -425,6 +446,17 @@ export default function App() {
               </motion.div>
             )}
 
+            {/* Error Messages */}
+            {firestoreError && (
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-center font-bold uppercase tracking-tighter"
+              >
+                {firestoreError}
+              </motion.div>
+            )}
+
             {/* Search Bar */}
             <motion.div 
               layout
@@ -515,7 +547,7 @@ export default function App() {
                   className="space-y-8 mt-12"
                 >
                   {/* AI Insight Section (Full Width at Top) */}
-                  {(aiInsight || isSearching) && (
+                  {(aiInsight || isAiLoading) && (
                     <motion.div 
                       initial={{ scale: 0.95, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -523,7 +555,7 @@ export default function App() {
                     >
                       <div className="ai-badge-theme">AI Synthetic Insight</div>
                       <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
-                      {isSearching ? (
+                      {isAiLoading ? (
                         <div className="space-y-4">
                           <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
                           <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
