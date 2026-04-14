@@ -90,6 +90,8 @@ export default function App() {
   const [imageAnalysis, setImageAnalysis] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -126,10 +128,18 @@ export default function App() {
   }, [user]);
 
   const handleLogin = async () => {
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError("Popup was blocked by your browser. Please allow popups for this site.");
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Ignore if user closed it
+      } else {
+        setLoginError(`Login failed: ${error.message}. Try opening the app in a new tab.`);
+      }
     }
   };
 
@@ -280,6 +290,12 @@ export default function App() {
               <h2 className="text-3xl font-black uppercase tracking-tighter">Welcome Back</h2>
               <p className="text-zinc-400 font-medium">Sign in with Google to sync your history, bookmarks, and AI insights across timelines.</p>
               
+              {loginError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-medium">
+                  {loginError}
+                </div>
+              )}
+
               <button 
                 onClick={handleLogin}
                 className="w-full py-6 bg-white text-black font-black text-lg rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-4 group/btn uppercase tracking-tighter"
@@ -287,6 +303,18 @@ export default function App() {
                 Continue with Google
                 <ArrowRight className="group-hover/btn:translate-x-2 transition-transform" size={24} />
               </button>
+
+              <div className="pt-4 border-t border-white/5">
+                <p className="text-xs text-muted mb-4 uppercase tracking-widest font-bold">Login issues?</p>
+                <a 
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-accent hover:underline text-sm font-bold uppercase tracking-tighter"
+                >
+                  Open in New Tab <ExternalLink size={14} />
+                </a>
+              </div>
             </div>
             
             {/* Decor */}
