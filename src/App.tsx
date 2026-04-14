@@ -23,7 +23,8 @@ import {
   Image as ImageIcon,
   Upload,
   Camera,
-  Loader2
+  Loader2,
+  Mic
 } from 'lucide-react';
 import Groq from "groq-sdk";
 import { 
@@ -111,6 +112,65 @@ export default function App() {
   const [followUpQuery, setFollowUpQuery] = useState('');
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
   const [searchMemory, setSearchMemory] = useState<string[]>([]);
+  const [isListening, setIsListening] = useState(false);
+
+  // Voice Recognition Setup
+  const requestMicPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop()); // Close the stream immediately
+      return true;
+    } catch (err) {
+      console.error("Mic permission request failed", err);
+      return false;
+    }
+  };
+
+  const startListening = async (target: 'search' | 'followup') => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice recognition is not supported in this browser. Try Chrome or Edge! 🎙️");
+      return;
+    }
+
+    // Proactively request permission if it might be blocked
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) {
+      alert("Microphone access is required for voice features. Please allow it in your browser settings! 🎤❌");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      setIsListening(false);
+      
+      if (event.error === 'not-allowed') {
+        alert("Microphone access was denied. Please check your browser settings and ensure you've granted permission to this site! 🎤❌");
+      } else if (event.error === 'no-speech') {
+        // Just ignore if they didn't say anything
+      } else {
+        alert(`Speech recognition error: ${event.error}. Try again? 📡`);
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      if (target === 'search') {
+        setSearchQuery(transcript);
+      } else {
+        setFollowUpQuery(transcript);
+      }
+    };
+
+    recognition.start();
+  };
 
   // Safety Reset for Loading States
   useEffect(() => {
@@ -423,22 +483,28 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-10 bg-[#050505] selection:bg-accent/30">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-10 bg-[#050505] selection:bg-accent/30 relative overflow-hidden">
+        {/* Fascinating Background Blobs */}
+        <div className="fascinating-bg">
+          <div className="blob w-[500px] h-[500px] -top-48 -left-48 animate-float" style={{ animationDelay: '0s' }} />
+          <div className="blob w-[600px] h-[600px] -bottom-48 -right-48 animate-float" style={{ animationDelay: '-10s' }} />
+        </div>
+
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-xl w-full text-center space-y-12"
+          className="max-w-xl w-full text-center space-y-8 sm:space-y-12"
         >
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             <h1 className="hero-title">
               VIBE<br /><span className="neon-text">SEARCH.</span>
             </h1>
-            <p className="text-xl text-muted font-bold uppercase tracking-widest">
-              Authentication Required to Access the Multiverse
+            <p className="text-lg sm:text-xl text-muted font-bold uppercase tracking-widest">
+              Authentication Required
             </p>
           </div>
 
-          <div className="glass p-12 rounded-[40px] border border-white/10 relative overflow-hidden group">
+          <div className="glass p-6 sm:p-12 rounded-[30px] sm:rounded-[40px] border border-white/10 relative overflow-hidden group">
             <div className="relative z-10 space-y-8">
               <div className="w-20 h-20 bg-secondary rounded-3xl mx-auto flex items-center justify-center neon-glow mb-8">
                 <User className="text-white w-10 h-10" />
@@ -487,9 +553,16 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col selection:bg-accent/30 p-10">
+    <div className="min-h-screen flex flex-col selection:bg-accent/30 p-4 sm:p-10">
+      {/* Fascinating Background Blobs */}
+      <div className="fascinating-bg">
+        <div className="blob w-[500px] h-[500px] -top-48 -left-48 animate-float" style={{ animationDelay: '0s' }} />
+        <div className="blob w-[400px] h-[400px] top-1/2 left-2/3 animate-float" style={{ animationDelay: '-5s' }} />
+        <div className="blob w-[600px] h-[600px] -bottom-48 left-1/4 animate-float" style={{ animationDelay: '-10s' }} />
+      </div>
+
       {/* Header */}
-      <header className="flex items-center justify-between mb-16">
+      <header className="flex items-center justify-between mb-8 sm:mb-16">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-black tracking-tighter uppercase">
             Meta // OS
@@ -588,32 +661,42 @@ export default function App() {
             {/* Search Bar */}
             <motion.div 
               layout
-              className="relative group max-w-3xl flex gap-4"
+              className="relative group max-w-3xl w-full"
             >
-              <div className="relative flex-1">
-                <form onSubmit={performSearch}>
+              <div className="relative w-full">
+                <form onSubmit={performSearch} className="relative w-full">
                   <input 
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search the multiverse..."
-                    className="search-input-theme pr-32"
+                    className="search-input-theme pr-32 sm:pr-44"
                   />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => startListening('search')}
+                      className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-all ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'hover:bg-white/5 text-muted'}`}
+                      title="Voice Search"
+                    >
+                      <Mic size={18} className="sm:hidden" />
+                      <Mic size={20} className="hidden sm:block" />
+                    </button>
                     <button 
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
                       title="Analyze Image"
                     >
-                      <Camera size={20} />
+                      <Camera size={18} className="sm:hidden" />
+                      <Camera size={20} className="hidden sm:block" />
                     </button>
                     <button 
                       type="submit"
                       disabled={isSearching}
-                      className="w-12 h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
+                      className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
                     >
-                      <Search className="text-white" size={24} />
+                      <Search className="text-white" size={20} />
                     </button>
                   </div>
                 </form>
@@ -679,7 +762,7 @@ export default function App() {
                     <motion.div 
                       initial={{ scale: 0.95, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      className="glass p-8 rounded-3xl relative overflow-hidden group border border-white/10 w-full"
+                      className="glass p-4 sm:p-8 rounded-3xl relative overflow-hidden group border border-white/10 w-full"
                     >
                       <div className="ai-badge-theme">AI Synthetic Insight</div>
                       <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
@@ -720,20 +803,32 @@ export default function App() {
 
                           {/* Follow-up Input */}
                           <form onSubmit={handleFollowUp} className="relative mt-4">
-                            <input 
-                              type="text"
-                              value={followUpQuery}
-                              onChange={(e) => setFollowUpQuery(e.target.value)}
-                              placeholder="Ask more about this..."
-                              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 pr-12 text-sm focus:outline-none focus:border-accent transition-colors"
-                            />
-                            <button 
-                              type="submit"
-                              disabled={isFollowUpLoading || !followUpQuery.trim()}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              <ArrowRight size={18} />
-                            </button>
+                            <div className="relative flex items-center">
+                              <input 
+                                type="text"
+                                value={followUpQuery}
+                                onChange={(e) => setFollowUpQuery(e.target.value)}
+                                placeholder="Ask more about this..."
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 pr-24 text-sm focus:outline-none focus:border-accent transition-colors"
+                              />
+                              <div className="absolute right-2 flex items-center gap-1">
+                                <button 
+                                  type="button"
+                                  onClick={() => startListening('followup')}
+                                  className={`p-2 rounded-lg transition-all ${isListening ? 'text-red-500 animate-pulse' : 'text-muted hover:text-white'}`}
+                                  title="Voice Input"
+                                >
+                                  <Mic size={18} />
+                                </button>
+                                <button 
+                                  type="submit"
+                                  disabled={isFollowUpLoading || !followUpQuery.trim()}
+                                  className="p-2 text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                  <ArrowRight size={18} />
+                                </button>
+                              </div>
+                            </div>
                           </form>
                         </div>
                       )}
@@ -749,13 +844,13 @@ export default function App() {
                         <motion.div 
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="border-2 border-accent p-8 rounded-3xl bg-accent/5 relative overflow-hidden"
+                          className="border-2 border-accent p-6 sm:p-8 rounded-3xl bg-accent/5 relative overflow-hidden"
                         >
                           <div className="flex items-center gap-2 mb-6">
                             <Camera className="text-accent" size={24} />
                             <span className="text-xs font-black text-accent uppercase tracking-[0.2em]">Visual Analysis</span>
                           </div>
-                          <p className="text-2xl font-bold leading-relaxed">
+                          <p className="text-xl sm:text-2xl font-bold leading-relaxed">
                             {imageAnalysis}
                           </p>
                           <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-accent/20 blur-[60px] rounded-full pointer-events-none" />
@@ -768,7 +863,7 @@ export default function App() {
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: idx * 0.1 }}
-                          className="border border-muted p-6 rounded-2xl hover:border-secondary transition-colors group relative"
+                          className="border border-muted p-4 sm:p-6 rounded-2xl hover:border-secondary transition-colors group relative"
                         >
                           <div className="flex justify-between items-start mb-4">
                             <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">{result.source}</span>
@@ -830,8 +925,8 @@ export default function App() {
             animate={{ opacity: 1 }}
             className="space-y-6"
           >
-            <div className="flex items-center justify-between mb-12">
-              <h2 className="hero-title text-6xl">HISTORY</h2>
+            <div className="flex items-center justify-between mb-8 sm:mb-12">
+              <h2 className="hero-title text-4xl sm:text-6xl">HISTORY</h2>
               <button onClick={() => setActiveTab('search')} className="p-3 border border-muted rounded-full hover:border-white transition-colors"><X size={24} /></button>
             </div>
             {history.length > 0 ? history.map((item, idx) => (
@@ -862,8 +957,8 @@ export default function App() {
             animate={{ opacity: 1 }}
             className="space-y-6"
           >
-            <div className="flex items-center justify-between mb-12">
-              <h2 className="hero-title text-6xl">SAVED</h2>
+            <div className="flex items-center justify-between mb-8 sm:mb-12">
+              <h2 className="hero-title text-4xl sm:text-6xl">SAVED</h2>
               <button onClick={() => setActiveTab('search')} className="p-3 border border-muted rounded-full hover:border-white transition-colors"><X size={24} /></button>
             </div>
             {bookmarks.length > 0 ? bookmarks.map((item) => (
@@ -892,14 +987,14 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-20 py-12 flex flex-col md:flex-row justify-between items-end gap-8 border-t border-muted/30">
-        <div className="flex flex-col gap-2">
-          <div className="text-[12px] text-muted uppercase tracking-[0.2em] font-medium">
+      <footer className="mt-20 py-12 flex flex-col sm:flex-row justify-between items-center sm:items-end gap-8 border-t border-muted/30">
+        <div className="flex flex-col gap-2 text-center sm:text-left">
+          <div className="text-[10px] sm:text-[12px] text-muted uppercase tracking-[0.2em] font-medium">
             Engineered by <strong className="text-white font-black">Adarsh Saxena</strong>
           </div>
         </div>
 
-        <div className="flex gap-8 text-[12px] font-black uppercase tracking-widest text-accent">
+        <div className="flex flex-wrap justify-center gap-4 sm:gap-8 text-[10px] sm:text-[12px] font-black uppercase tracking-widest text-accent">
           <span className="cursor-pointer hover:underline underline-offset-4">Instagram</span>
           <span className="cursor-pointer hover:underline underline-offset-4">Twitter</span>
           <span className="cursor-pointer hover:underline underline-offset-4">Discord</span>

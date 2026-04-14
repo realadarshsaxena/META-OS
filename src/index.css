@@ -12,8 +12,36 @@
 
 @layer base {
   body {
-    @apply bg-[#050505] text-white font-sans antialiased;
+    @apply bg-[#050505] text-white font-sans antialiased min-h-screen relative overflow-x-hidden;
   }
+
+  body::before {
+    content: "";
+    @apply fixed inset-0 -z-10;
+    background: 
+      radial-gradient(circle at 20% 30%, rgba(112, 0, 255, 0.15) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(189, 255, 0, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(5, 5, 5, 1) 0%, rgba(10, 10, 10, 1) 100%);
+  }
+}
+
+.fascinating-bg {
+  @apply fixed inset-0 -z-20 overflow-hidden pointer-events-none;
+}
+
+.blob {
+  @apply absolute rounded-full blur-[120px] opacity-30 animate-pulse;
+  background: linear-gradient(45deg, var(--color-secondary), var(--color-accent));
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+}
+
+.animate-float {
+  animation: float 20s ease-in-out infinite;
 }
 
 .glass {
@@ -21,11 +49,11 @@
 }
 
 .hero-title {
-  @apply text-[120px] font-[900] leading-[0.85] tracking-[-0.04em] uppercase;
+  @apply text-6xl sm:text-8xl md:text-[120px] font-[900] leading-[0.85] tracking-[-0.04em] uppercase;
 }
 
 .search-input-theme {
-  @apply w-full bg-transparent border-2 border-[#444444] p-6 text-2xl text-white rounded-[20px] outline-none transition-all focus:border-[#7000FF];
+  @apply w-full bg-transparent border-2 border-[#444444] p-4 sm:p-6 text-lg sm:text-2xl text-white rounded-[20px] outline-none transition-all focus:border-[#7000FF];
 }
 
 .ai-badge-theme {
