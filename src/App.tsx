@@ -127,7 +127,7 @@ export default function App() {
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'search' | 'history' | 'bookmarks' | 'zen'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'history' | 'bookmarks' | 'zen' | 'features'>('search');
   const [showProfile, setShowProfile] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
@@ -800,12 +800,21 @@ export default function App() {
             </div>
           )}
           
-          <div className="flex items-center gap-1 glass p-1 rounded-full border border-white/5">
+          <div className="flex items-center gap-1 glass p-1.5 rounded-full border border-white/5">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setActiveTab(activeTab === 'features' ? 'search' : 'features')}
+              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'features' ? 'bg-white text-black' : 'text-muted hover:text-white'}`}
+            >
+              <Sparkles size={12} /> Features
+            </motion.button>
+            <div className="w-[1px] h-3 bg-white/10 mx-1" />
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setActiveTab(activeTab === 'zen' ? 'search' : 'zen')}
-              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'zen' ? 'bg-secondary text-white' : 'text-muted hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'zen' ? 'bg-secondary text-white' : 'text-muted hover:text-white'}`}
             >
               <Wind size={12} /> Zen Mode
             </motion.button>
@@ -816,7 +825,7 @@ export default function App() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setPersona(p)}
-                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all ${persona === p ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}
+                className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all ${persona === p ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}
               >
                 {p}
               </motion.button>
@@ -883,7 +892,76 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-5xl mx-auto w-full">
+      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6">
+        {activeTab === 'features' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-20 py-12"
+          >
+            <div className="text-center space-y-6">
+              <h2 className="hero-title premium-gradient-text">THE<br />ENGINE.</h2>
+              <p className="text-xl text-muted font-medium max-w-2xl mx-auto uppercase tracking-[0.2em]">A deep dive into the multiverse search architecture.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {[
+                {
+                  icon: <Search className="text-accent" />,
+                  title: "Multimodal Search",
+                  desc: "Search beyond text. Analyze images and videos with neural-level precision using Gemini & Llama vision models."
+                },
+                {
+                  icon: <Wind className="text-secondary" />,
+                  title: "Zen Space",
+                  desc: "A dedicated sanctuary for overthinkers. Grounding exercises and calm AI assistance to quiet the noise."
+                },
+                {
+                  icon: <Zap className="text-accent" />,
+                  title: "AI Personas",
+                  desc: "Toggle between Hype, Scholar, and Cynic modes to shift the AI's vocabulary and perspective instantly."
+                },
+                {
+                  icon: <Share2 className="text-secondary" />,
+                  title: "Vibe Cards",
+                  desc: "Generate high-fidelity, branded insight cards for social sharing with a single click."
+                },
+                {
+                  icon: <Globe className="text-accent" />,
+                  title: "Live Feed",
+                  desc: "Witness the collective curiosity of the multiverse with our real-time global activity marquee."
+                },
+                {
+                  icon: <ShieldCheck className="text-secondary" />,
+                  title: "Secure Sync",
+                  desc: "Your history and bookmarks are encrypted and synced across timelines via Firebase integration."
+                }
+              ].map((feat, i) => (
+                <motion.div 
+                  key={i}
+                  whileHover={{ y: -10 }}
+                  className="premium-card p-8 space-y-4"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-white/[0.03] flex items-center justify-center border border-white/5">
+                    {feat.icon}
+                  </div>
+                  <h3 className="text-2xl font-bold font-display tracking-tight">{feat.title}</h3>
+                  <p className="text-muted leading-relaxed">{feat.desc}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="text-center">
+              <button 
+                onClick={() => setActiveTab('search')}
+                className="px-12 py-5 bg-white text-black font-black rounded-full hover:bg-zinc-200 transition-all uppercase tracking-widest text-sm"
+              >
+                Enter the Multiverse
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {activeTab === 'zen' && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -1394,37 +1472,37 @@ export default function App() {
                           key={result.id}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          whileHover={{ y: -5, scale: 1.01 }}
+                          whileHover={{ y: -5 }}
                           transition={{ delay: idx * 0.05 }}
-                          className="border border-muted p-4 sm:p-6 rounded-2xl hover:border-secondary transition-all duration-300 group relative glass overflow-hidden"
+                          className="premium-card p-5 sm:p-7 group relative overflow-hidden"
                         >
                           <div className="absolute inset-0 shimmer opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                          <div className="flex justify-between items-start mb-4 relative z-10">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">{result.source}</span>
+                          <div className="flex justify-between items-start mb-5 relative z-10">
+                            <span className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] bg-secondary/10 px-2 py-1 rounded-md">{result.source}</span>
                             <button 
                               onClick={() => toggleBookmark(result)}
-                              className={`p-2 rounded-lg transition-colors ${bookmarks.some(b => b.url === result.url) ? 'bg-accent text-black' : 'hover:bg-white/5 text-muted'}`}
+                              className={`p-2 rounded-xl transition-all ${bookmarks.some(b => b.url === result.url) ? 'bg-accent text-black shadow-[0_0_20px_rgba(193,255,0,0.3)]' : 'hover:bg-white/5 text-muted'}`}
                             >
-                              <Bookmark size={16} />
+                              <Bookmark size={18} />
                             </button>
                           </div>
-                          <a href={result.url} target="_blank" rel="noopener noreferrer" className="block group">
-                            <div className="flex flex-col sm:flex-row gap-4">
+                          <a href={result.url} target="_blank" rel="noopener noreferrer" className="block group relative z-10">
+                            <div className="flex flex-col sm:flex-row gap-6">
                               {result.imageUrl && (
-                                <div className="w-full sm:w-32 h-32 sm:h-24 rounded-xl overflow-hidden flex-shrink-0 border border-white/5">
+                                <div className="w-full sm:w-40 h-40 sm:h-28 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10 shadow-2xl">
                                   <img 
                                     src={result.imageUrl} 
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
                                     alt="" 
                                     referrerPolicy="no-referrer"
                                   />
                                 </div>
                               )}
-                              <div className="flex-1">
-                                <h3 className="text-xl font-bold mb-2 group-hover:text-accent transition-colors flex items-center gap-2">
-                                  {result.title} <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <div className="flex-1 space-y-3">
+                                <h3 className="text-2xl font-bold font-display tracking-tight group-hover:text-accent transition-colors flex items-center gap-3">
+                                  {result.title} <ExternalLink size={16} className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
                                 </h3>
-                                <p className="text-zinc-400 text-sm leading-relaxed">{result.snippet}</p>
+                                <p className="text-muted text-sm leading-relaxed line-clamp-2">{result.snippet}</p>
                               </div>
                             </div>
                           </a>
@@ -1445,20 +1523,21 @@ export default function App() {
                   animate={{ opacity: 1 }}
                   className="py-12"
                 >
-                  <p className="text-muted text-sm font-bold uppercase tracking-widest mb-6">Trending in the Multiverse</p>
-                  <div className="flex flex-col gap-3 max-w-md">
+                  <p className="text-muted text-[11px] font-black uppercase tracking-[0.2em] mb-8">Trending in the Multiverse</p>
+                  <div className="flex flex-col gap-4 max-w-md">
                     {['#SpatialComputing', '#NeoMinimalism', '#AdarSaxenaDesign', '#FutureOfSearch'].map((tag, idx) => (
-                      <button 
+                      <motion.button 
                         key={tag}
+                        whileHover={{ x: 10 }}
                         onClick={() => { setSearchQuery(tag.replace('#', '')); performSearch(); }}
-                        className="flex items-center justify-between p-4 border border-muted rounded-xl hover:border-accent hover:bg-accent/5 transition-all group"
+                        className="flex items-center justify-between p-5 premium-card group"
                       >
-                        <div className="flex items-center gap-4">
-                          <span className="text-lg font-black text-muted group-hover:text-accent transition-colors">0{idx + 1}</span>
-                          <span className="font-bold">{tag}</span>
+                        <div className="flex items-center gap-6">
+                          <span className="text-xl font-black text-white/10 group-hover:text-accent transition-colors">0{idx + 1}</span>
+                          <span className="font-bold text-lg tracking-tight">{tag}</span>
                         </div>
-                        <ChevronRight size={16} className="text-muted group-hover:text-accent" />
-                      </button>
+                        <ChevronRight size={18} className="text-muted group-hover:text-accent transition-all group-hover:translate-x-1" />
+                      </motion.button>
                     ))}
                   </div>
                 </motion.div>
