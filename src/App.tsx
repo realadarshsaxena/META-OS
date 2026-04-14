@@ -73,7 +73,20 @@ interface BookmarkItem {
 }
 
 // AI Service
-const GEMINI_KEY = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_AI_KEY;
+const getApiKey = () => {
+  try {
+    return process.env.GEMINI_API_KEY || 
+           (import.meta as any).env.VITE_AI_KEY || 
+           (import.meta as any).env.VITE_GEMINI_API_KEY ||
+           (import.meta as any).env.VITE_API_KEY;
+  } catch {
+    return (import.meta as any).env.VITE_AI_KEY || 
+           (import.meta as any).env.VITE_GEMINI_API_KEY ||
+           (import.meta as any).env.VITE_API_KEY;
+  }
+};
+
+const GEMINI_KEY = getApiKey();
 const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
 
 export default function App() {
