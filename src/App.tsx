@@ -107,6 +107,10 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
+  const [followUpQuery, setFollowUpQuery] = useState('');
+  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
+  const [searchMemory, setSearchMemory] = useState<string[]>([]);
 
   // Safety Reset for Loading States
   useEffect(() => {
@@ -195,11 +199,34 @@ export default function App() {
     setIsSearching(true);
     setIsAiLoading(true);
     setAiInsight(null);
+    setChatHistory([]);
+    setSearchMemory(prev => [searchQuery, ...prev].slice(0, 5));
     setActiveTab('search');
 
     try {
-      // 1. Simulate Meta Search Results (Instant)
-      const mockResults: SearchResult[] = [
+      // 1. Fetch Real Search Results from Serper
+      const serperKey = (import.meta as any).env.VITE_SERPER_API_KEY;
+      let searchData;
+      
+      if (serperKey) {
+        const response = await fetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: {
+            'X-API-KEY': serperKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ q: searchQuery })
+        });
+        searchData = await response.json();
+      }
+
+      const webResults: SearchResult[] = searchData?.organic?.map((item: any, idx: number) => ({
+        id: `serper-${idx}`,
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet,
+        source: new URL(item.link).hostname.replace('www.', '')
+      })) || [
         {
           id: '1',
           title: `${searchQuery} - Wikipedia`,
@@ -213,19 +240,13 @@ export default function App() {
           url: `https://news.google.com/search?q=${encodeURIComponent(searchQuery)}`,
           snippet: `Stay updated with the most recent developments and trending stories regarding ${searchQuery}.`,
           source: 'Google News'
-        },
-        {
-          id: '3',
-          title: `Reddit: What people say about ${searchQuery}`,
-          url: `https://www.reddit.com/search/?q=${encodeURIComponent(searchQuery)}`,
-          snippet: `Join the discussion and see community perspectives on ${searchQuery} from various subreddits.`,
-          source: 'Reddit'
         }
       ];
-      setResults(mockResults);
-      setIsSearching(false); // Stop main loading as results are ready
 
-      // 2. Get AI Insights (Async)
+      setResults(webResults);
+      setIsSearching(false);
+
+      // 2. Get AI Insights (Async) with Search Context
       if (!ai) {
         setAiInsight("Groq API Key is missing. Please add VITE_GROQ_API_KEY to your secrets. 🛸");
         setIsAiLoading(false);
@@ -234,11 +255,29 @@ export default function App() {
 
       try {
         const getInsight = async () => {
+          const contextPrompt = searchMemory.length > 0 
+            ? `Recent Multiverse Activity: ${searchMemory.join(', ')}. `
+            : '';
+          
+          const searchContext = webResults.slice(0, 3).map(r => `Source: ${r.source}\nTitle: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
+
           const aiPromise = ai.chat.completions.create({
             model: "llama-3.3-70b-versatile",
             messages: [
-              { role: "system", content: "You are a Gen Z AI assistant providing punchy, short insights for a search engine called VibeSearch. Use emojis and stay under 100 words." },
-              { role: "user", content: `Provide a punchy summary and insight about "${searchQuery}".` }
+              { 
+                role: "system", 
+                content: `You are a Gen Z AI assistant for VibeSearch. 
+                User Name: ${user?.displayName || 'Adarsh Saxena'}. 
+                ${contextPrompt}
+                
+                REAL-TIME SEARCH CONTEXT:
+                ${searchContext}
+
+                Provide a punchy, short insight for the current search using the provided real-time context. 
+                Be context-aware: if the current search relates to previous activity, acknowledge the connection. 
+                Use emojis and stay under 100 words.` 
+              },
+              { role: "user", content: `Current Search: "${searchQuery}"` }
             ],
             max_tokens: 300
           });
@@ -253,6 +292,7 @@ export default function App() {
         const result = await getInsight();
         const insight = result?.choices?.[0]?.message?.content || "The multiverse is quiet on this one. 🌌";
         setAiInsight(insight);
+        setChatHistory([{ role: 'assistant', content: insight }]);
 
         // 3. Save to History
         if (user) {
@@ -273,6 +313,43 @@ export default function App() {
       console.error("Search failed", error);
       setIsSearching(false);
       setIsAiLoading(false);
+    }
+  };
+
+  const handleFollowUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followUpQuery.trim() || !ai || isFollowUpLoading) return;
+
+    const userMessage = followUpQuery.trim();
+    setFollowUpQuery('');
+    setChatHistory(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsFollowUpLoading(true);
+
+    try {
+      const response = await ai.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { 
+            role: "system", 
+            content: `You are a Gen Z AI assistant for VibeSearch. 
+            User Name: ${user?.displayName || 'Adarsh Saxena'}. 
+            Current Topic: ${searchQuery}.
+            Provide punchy, short follow-up insights. Stay context-aware of the entire conversation. 
+            Use emojis and stay under 100 words.` 
+          },
+          ...chatHistory,
+          { role: "user", content: userMessage }
+        ],
+        max_tokens: 300
+      });
+
+      const assistantMessage = response.choices[0].message.content || "The signal is weak... try again? 📡";
+      setChatHistory(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
+    } catch (error) {
+      console.error("Follow-up failed", error);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: "My brain just glitched. Try that again? 😵‍💫" }]);
+    } finally {
+      setIsFollowUpLoading(false);
     }
   };
 
@@ -613,9 +690,52 @@ export default function App() {
                           <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
                         </div>
                       ) : (
-                        <p className="text-zinc-300 leading-relaxed font-medium">
-                          {aiInsight}
-                        </p>
+                        <div className="space-y-6">
+                          {/* Chat History */}
+                          <div className="space-y-4">
+                            {chatHistory.map((msg, i) => (
+                              <motion.div 
+                                key={i}
+                                initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div className={`max-w-[85%] p-4 rounded-2xl ${
+                                  msg.role === 'user' 
+                                    ? 'bg-accent text-black font-bold' 
+                                    : 'bg-white/5 text-zinc-300 border border-white/10'
+                                }`}>
+                                  {msg.content}
+                                </div>
+                              </motion.div>
+                            ))}
+                            {isFollowUpLoading && (
+                              <div className="flex justify-start">
+                                <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
+                                  <Loader2 className="animate-spin text-accent" size={20} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Follow-up Input */}
+                          <form onSubmit={handleFollowUp} className="relative mt-4">
+                            <input 
+                              type="text"
+                              value={followUpQuery}
+                              onChange={(e) => setFollowUpQuery(e.target.value)}
+                              placeholder="Ask more about this..."
+                              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 pr-12 text-sm focus:outline-none focus:border-accent transition-colors"
+                            />
+                            <button 
+                              type="submit"
+                              disabled={isFollowUpLoading || !followUpQuery.trim()}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              <ArrowRight size={18} />
+                            </button>
+                          </form>
+                        </div>
                       )}
                       {/* Decor */}
                       <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-secondary/20 blur-[80px] rounded-full pointer-events-none" />
