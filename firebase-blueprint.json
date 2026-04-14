@@ -9,9 +9,21 @@
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "credits": { "type": "integer", "description": "Remaining deep decode credits" },
+        "lastCreditReset": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email"]
+    },
+    "GlobalActivity": {
+      "title": "GlobalActivity",
+      "description": "Anonymized global search activity",
+      "type": "object",
+      "properties": {
+        "query": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["query", "timestamp"]
     },
     "SearchHistory": {
       "title": "SearchHistory",

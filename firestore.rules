@@ -28,6 +28,11 @@ service cloud.firestore {
     //   - snippet: string (optional, max 1000 chars)
     //   - timestamp: timestamp (required)
     //
+    // Collection: /global_activity/{activityId}
+    // Fields:
+    //   - query: string (required, max 100 chars)
+    //   - timestamp: timestamp (required)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -63,7 +68,15 @@ service cloud.firestore {
              data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
              data.createdAt is timestamp &&
-             (!('role' in data) || (data.role is string && data.role in ['user', 'admin']));
+             (!('role' in data) || (data.role is string && data.role in ['user', 'admin'])) &&
+             (!('credits' in data) || data.credits is int) &&
+             (!('lastCreditReset' in data) || data.lastCreditReset is timestamp);
+    }
+
+    function isValidGlobalActivity(data) {
+      return data.keys().hasAll(['query', 'timestamp']) &&
+             data.query is string && data.query.size() <= 100 &&
+             data.timestamp is timestamp;
     }
 
     function isValidSearch(data) {
@@ -105,6 +118,11 @@ service cloud.firestore {
         allow create: if isOwner(uid) && isValidBookmark(request.resource.data);
         allow delete: if isOwner(uid);
       }
+    }
+
+    match /global_activity/{activityId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidGlobalActivity(request.resource.data);
     }
 
     // Default deny

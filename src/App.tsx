@@ -5,12 +5,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toPng } from 'html-to-image';
 import { 
   Search, 
   Sparkles, 
   History, 
   Bookmark, 
-  User, 
+  User as UserIcon, 
   LogOut, 
   ArrowRight, 
   X, 
@@ -25,7 +26,15 @@ import {
   Camera,
   Loader2,
   Mic,
-  Video
+  Video,
+  Share2,
+  Zap,
+  Globe,
+  MessageSquare,
+  Clock,
+  Wind,
+  Heart,
+  ShieldCheck
 } from 'lucide-react';
 import Groq from "groq-sdk";
 import { GoogleGenAI } from "@google/genai";
@@ -48,6 +57,8 @@ import {
   deleteDoc, 
   doc,
   getDocFromServer,
+  updateDoc,
+  limit,
   Timestamp
 } from 'firebase/firestore';
 
@@ -58,6 +69,13 @@ interface SearchResult {
   url: string;
   snippet: string;
   source: string;
+  imageUrl?: string;
+}
+
+interface SearchImage {
+  title: string;
+  imageUrl: string;
+  link: string;
 }
 
 interface HistoryItem {
@@ -74,6 +92,14 @@ interface BookmarkItem {
   snippet: string;
   timestamp: Timestamp;
 }
+
+interface GlobalActivityItem {
+  id: string;
+  query: string;
+  timestamp: Timestamp;
+}
+
+type Persona = 'hype' | 'scholar' | 'cynic';
 
 // AI Service
 const getApiKey = () => {
@@ -97,10 +123,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [imageResults, setImageResults] = useState<SearchImage[]>([]);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'search' | 'history' | 'bookmarks'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'history' | 'bookmarks' | 'zen'>('search');
   const [showProfile, setShowProfile] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
@@ -108,8 +135,12 @@ export default function App() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
   const [videoAnalysis, setVideoAnalysis] = useState<string | null>(null);
+  const [persona, setPersona] = useState<Persona>('hype');
+  const [credits, setCredits] = useState<number>(10);
+  const [globalActivity, setGlobalActivity] = useState<GlobalActivityItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
@@ -119,6 +150,11 @@ export default function App() {
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
   const [searchMemory, setSearchMemory] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
+
+  // Zen Mode State
+  const [zenChat, setZenChat] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
+  const [zenQuery, setZenQuery] = useState('');
+  const [isZenLoading, setIsZenLoading] = useState(false);
 
   // Voice Recognition Setup
   const requestMicPermission = async () => {
@@ -234,9 +270,39 @@ export default function App() {
       setBookmarks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookmarkItem)));
     });
 
+    const globalQuery = query(
+      collection(db, 'global_activity'),
+      orderBy('timestamp', 'desc'),
+      limit(10)
+    );
+    const unsubscribeGlobal = onSnapshot(globalQuery, (snapshot) => {
+      setGlobalActivity(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GlobalActivityItem)));
+    });
+
+    // Credit logic: Sync credits from user doc
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setCredits(data.credits ?? 10);
+        
+        // Daily reset logic
+        const lastReset = data.lastCreditReset?.toDate();
+        const now = new Date();
+        if (!lastReset || now.getDate() !== lastReset.getDate()) {
+          updateDoc(userDocRef, {
+            credits: 10,
+            lastCreditReset: serverTimestamp()
+          });
+        }
+      }
+    });
+
     return () => {
       unsubscribeHistory();
       unsubscribeBookmarks();
+      unsubscribeGlobal();
+      unsubscribeUser();
     };
   }, [user]);
 
@@ -258,6 +324,17 @@ export default function App() {
 
   const handleLogout = () => auth.signOut();
 
+  const getPersonaPrompt = () => {
+    switch (persona) {
+      case 'scholar':
+        return "You are a distinguished scholar for VibeSearch. Provide deep, academic insights with formal language and citations. No slang, only rigorous facts.";
+      case 'cynic':
+        return "You are a brutally honest, cynical AI for VibeSearch. Be sarcastic, skeptical, and highlight the flaws or ironies in the search results. Keep it real but edgy.";
+      default:
+        return "You are a Gen Z AI assistant for VibeSearch. Use punchy language, emojis, and stay context-aware. Be helpful but keep the vibe high.";
+    }
+  };
+
   const performSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -269,21 +346,36 @@ export default function App() {
     setSearchMemory(prev => [searchQuery, ...prev].slice(0, 5));
     setActiveTab('search');
 
+    // Global Activity Logging (Anonymized)
+    try {
+      addDoc(collection(db, 'global_activity'), {
+        query: searchQuery.slice(0, 50), // Truncate for privacy
+        timestamp: serverTimestamp()
+      });
+    } catch (e) { console.error("Global log failed", e); }
+
     try {
       // 1. Fetch Real Search Results from Serper
       const serperKey = (import.meta as any).env.VITE_SERPER_API_KEY;
       let searchData;
+      let imageData;
       
       if (serperKey) {
-        const response = await fetch('https://google.serper.dev/search', {
-          method: 'POST',
-          headers: {
-            'X-API-KEY': serperKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ q: searchQuery })
-        });
-        searchData = await response.json();
+        const [searchRes, imageRes] = await Promise.all([
+          fetch('https://google.serper.dev/search', {
+            method: 'POST',
+            headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q: searchQuery })
+          }),
+          fetch('https://google.serper.dev/images', {
+            method: 'POST',
+            headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q: searchQuery, num: 8 })
+          })
+        ]);
+        
+        searchData = await searchRes.json();
+        imageData = await imageRes.json();
       }
 
       const webResults: SearchResult[] = searchData?.organic?.map((item: any, idx: number) => ({
@@ -291,7 +383,8 @@ export default function App() {
         title: item.title,
         url: item.link,
         snippet: item.snippet,
-        source: new URL(item.link).hostname.replace('www.', '')
+        source: new URL(item.link).hostname.replace('www.', ''),
+        imageUrl: item.imageUrl
       })) || [
         {
           id: '1',
@@ -309,7 +402,14 @@ export default function App() {
         }
       ];
 
+      const images: SearchImage[] = imageData?.images?.map((img: any) => ({
+        title: img.title,
+        imageUrl: img.imageUrl,
+        link: img.link
+      })) || [];
+
       setResults(webResults);
+      setImageResults(images);
       setIsSearching(false);
 
       // 2. Get AI Insights (Async) with Search Context
@@ -332,16 +432,15 @@ export default function App() {
             messages: [
               { 
                 role: "system", 
-                content: `You are a Gen Z AI assistant for VibeSearch. 
+                content: `${getPersonaPrompt()} 
                 User Name: ${user?.displayName || 'Adarsh Saxena'}. 
                 ${contextPrompt}
                 
                 REAL-TIME SEARCH CONTEXT:
                 ${searchContext}
 
-                Provide a punchy, short insight for the current search using the provided real-time context. 
-                Be context-aware: if the current search relates to previous activity, acknowledge the connection. 
-                Use emojis and stay under 100 words.` 
+                Provide a short insight for the current search using the provided real-time context. 
+                Stay under 100 words.` 
               },
               { role: "user", content: `Current Search: "${searchQuery}"` }
             ],
@@ -382,6 +481,40 @@ export default function App() {
     }
   };
 
+  const handleZenChat = async (e?: React.FormEvent, customQuery?: string) => {
+    if (e) e.preventDefault();
+    const query = customQuery || zenQuery;
+    if (!query.trim() || isZenLoading || !ai) return;
+
+    const newChat = [...zenChat, { role: 'user', content: query } as const];
+    setZenChat(newChat);
+    setZenQuery('');
+    setIsZenLoading(true);
+
+    try {
+      const response = await ai.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are a specialized Zen AI assistant for VibeSearch. Your goal is to help users who are overthinking or feeling anxious. Use a calm, grounding, and supportive tone. Provide short, actionable grounding exercises (like 5-4-3-2-1 or box breathing) if appropriate. Avoid overwhelming them with information. Be a safe space." 
+          },
+          ...newChat
+        ],
+        temperature: 0.5,
+        max_tokens: 500
+      });
+
+      const aiResponse = response.choices[0]?.message?.content || "I'm here for you. Take a deep breath. 🌬️";
+      setZenChat([...newChat, { role: 'assistant', content: aiResponse }]);
+    } catch (err) {
+      console.error("Zen chat failed", err);
+      setZenChat([...newChat, { role: 'assistant', content: "The multiverse is a bit noisy right now. Let's just breathe together for a moment. 🧘‍♂️" }]);
+    } finally {
+      setIsZenLoading(false);
+    }
+  };
+
   const handleFollowUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!followUpQuery.trim() || !ai || isFollowUpLoading) return;
@@ -397,16 +530,12 @@ export default function App() {
         messages: [
           { 
             role: "system", 
-            content: `You are a Gen Z AI assistant for VibeSearch. 
-            User Name: ${user?.displayName || 'Adarsh Saxena'}. 
-            Current Topic: ${searchQuery}.
-            Provide punchy, short follow-up insights. Stay context-aware of the entire conversation. 
-            Use emojis and stay under 100 words.` 
+            content: `${getPersonaPrompt()} Keep the conversation going based on the previous context. User Name: ${user?.displayName || 'Adarsh Saxena'}. Current Topic: ${searchQuery}.` 
           },
-          ...chatHistory,
+          ...chatHistory.map(msg => ({ role: msg.role, content: msg.content })),
           { role: "user", content: userMessage }
         ],
-        max_tokens: 300
+        max_tokens: 500
       });
 
       const assistantMessage = response.choices[0].message.content || "The signal is weak... try again? 📡";
@@ -432,6 +561,11 @@ export default function App() {
   };
 
   const analyzeImage = async (base64Image: string) => {
+    if (credits <= 0) {
+      alert("You've run out of Vibe Credits for today! 🔋💀 Credits reset daily.");
+      return;
+    }
+
     setIsAnalyzingImage(true);
     setImageAnalysis(null);
     setActiveTab('search');
@@ -460,6 +594,12 @@ export default function App() {
       });
       
       setImageAnalysis(result.choices[0].message.content);
+      // Decrement credits
+      if (user) {
+        updateDoc(doc(db, 'users', user.uid), {
+          credits: credits - 1
+        });
+      }
     } catch (error) {
       console.error("Image analysis failed", error);
       setImageAnalysis("Failed to analyze image. The multiverse is glitching. 💀");
@@ -482,33 +622,66 @@ export default function App() {
   };
 
   const analyzeVideo = async (base64Video: string, mimeType: string) => {
+    if (credits <= 0) {
+      setVideoAnalysis("You've run out of Vibe Credits for today! 🔋💀 Credits reset daily.");
+      return;
+    }
     setIsVideoAnalyzing(true);
     setVideoAnalysis(null);
     setActiveTab('search');
     setResults([]);
 
     try {
-      const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+        setVideoAnalysis("Gemini API Key is missing or invalid. Please check your AI Studio secrets! 🔑💀");
+        return;
+      }
+
+      const gemini = new GoogleGenAI({ apiKey });
       const base64Data = base64Video.split(',')[1];
 
+      // Use the exact format from the Gemini API skill
       const response = await gemini.models.generateContent({
         model: "gemini-3.1-pro-preview",
-        contents: [
-          {
-            parts: [
-              { text: "Analyze this video content. What are the key moments? What is the overall vibe? Summarize it in a Gen Z, punchy style with emojis. Keep it short." },
-              { inlineData: { data: base64Data, mimeType } }
-            ]
-          }
-        ]
+        contents: {
+          parts: [
+            { text: "Analyze this video content. Provide a summary with CLICKABLE TIMESTAMPS in the format [MM:SS]. What are the key moments? What is the overall vibe? Summarize it in a Gen Z, punchy style with emojis. Keep it short." },
+            { inlineData: { data: base64Data, mimeType } }
+          ]
+        }
       });
 
-      setVideoAnalysis(response.text || "The multiverse couldn't decode this video. 📼");
-    } catch (error) {
+      if (response && response.text) {
+        setVideoAnalysis(response.text);
+        // Decrement credits
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), {
+            credits: credits - 1
+          });
+        }
+      } else {
+        setVideoAnalysis("The AI couldn't generate a response for this video. It might be too large or unsupported. 📼");
+      }
+    } catch (error: any) {
       console.error("Video analysis failed", error);
-      setVideoAnalysis("Failed to analyze video. The timeline is corrupted. 📼💀");
+      const errorMessage = error?.message || "Unknown error";
+      setVideoAnalysis(`Video analysis failed: ${errorMessage}. The timeline is corrupted. 📼💀`);
     } finally {
       setIsVideoAnalyzing(false);
+    }
+  };
+
+  const shareVibe = async () => {
+    if (!cardRef.current) return;
+    try {
+      const dataUrl = await toPng(cardRef.current, { cacheBust: true });
+      const link = document.createElement('a');
+      link.download = `vibe-card-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Vibe Card generation failed', err);
     }
   };
 
@@ -557,7 +730,7 @@ export default function App() {
           <div className="glass p-6 sm:p-12 rounded-[30px] sm:rounded-[40px] border border-white/10 relative overflow-hidden group">
             <div className="relative z-10 space-y-8">
               <div className="w-20 h-20 bg-secondary rounded-3xl mx-auto flex items-center justify-center neon-glow mb-8">
-                <User className="text-white w-10 h-10" />
+                <UserIcon className="text-white w-10 h-10" />
               </div>
               <h2 className="text-3xl font-black uppercase tracking-tighter">Welcome Back</h2>
               <p className="text-zinc-400 font-medium">Sign in with Google to sync your history, bookmarks, and AI insights across timelines.</p>
@@ -620,6 +793,36 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          {user && (
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-full border border-white/5">
+              <Zap size={14} className="text-accent" />
+              <span className="text-xs font-black uppercase tracking-tighter">{credits} Vibe Credits</span>
+            </div>
+          )}
+          
+          <div className="flex items-center gap-1 glass p-1 rounded-full border border-white/5">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setActiveTab(activeTab === 'zen' ? 'search' : 'zen')}
+              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'zen' ? 'bg-secondary text-white' : 'text-muted hover:text-white'}`}
+            >
+              <Wind size={12} /> Zen Mode
+            </motion.button>
+            <div className="w-[1px] h-3 bg-white/10 mx-1" />
+            {(['hype', 'scholar', 'cynic'] as Persona[]).map((p) => (
+              <motion.button
+                key={p}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setPersona(p)}
+                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all ${persona === p ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}
+              >
+                {p}
+              </motion.button>
+            ))}
+          </div>
+
           {user ? (
             <div className="relative">
               <button 
@@ -681,6 +884,136 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-5xl mx-auto w-full">
+        {activeTab === 'zen' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-3xl mx-auto w-full space-y-12 py-8"
+          >
+            {/* Zen Header */}
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 bg-secondary/20 rounded-full mx-auto flex items-center justify-center relative">
+                <motion.div 
+                  animate={{ scale: [1, 1.5, 1] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 bg-secondary/10 rounded-full blur-xl"
+                />
+                <Wind className="text-secondary relative z-10" size={32} />
+              </div>
+              <h2 className="text-4xl font-black uppercase tracking-tighter">Zen Space</h2>
+              <p className="text-zinc-400 font-medium">Quiet the noise. Ground your mind in the present timeline.</p>
+            </div>
+
+            {/* Breathing Bubble */}
+            <div className="glass p-12 rounded-[40px] border border-white/5 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
+              <motion.div 
+                animate={{ 
+                  scale: [1, 1.4, 1],
+                  opacity: [0.5, 1, 0.5]
+                }}
+                transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+                className="w-48 h-48 rounded-full bg-gradient-to-br from-secondary/40 to-accent/40 blur-2xl"
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <motion.p 
+                  animate={{ opacity: [0, 1, 0] }}
+                  transition={{ duration: 8, repeat: Infinity, times: [0, 0.5, 1] }}
+                  className="text-2xl font-black uppercase tracking-[0.3em] text-white"
+                >
+                  Breathe In
+                </motion.p>
+                <motion.p 
+                  animate={{ opacity: [0, 1, 0] }}
+                  transition={{ duration: 8, repeat: Infinity, times: [0.5, 0.75, 1], delay: 4 }}
+                  className="text-2xl font-black uppercase tracking-[0.3em] text-white absolute"
+                >
+                  Breathe Out
+                </motion.p>
+              </div>
+            </div>
+
+            {/* Zen Chat */}
+            <div className="glass p-6 sm:p-8 rounded-3xl border border-white/5 space-y-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Heart className="text-red-400" size={20} />
+                <span className="text-xs font-black uppercase tracking-widest">Grounding Assistant</span>
+              </div>
+
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+                {zenChat.length === 0 && (
+                  <div className="text-center py-8 space-y-4">
+                    <p className="text-zinc-500 text-sm">Feeling overwhelmed? I'm here to help you ground yourself.</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {[
+                        "I'm overthinking right now",
+                        "Help me ground myself",
+                        "Quick breathing exercise",
+                        "I feel anxious"
+                      ].map((q) => (
+                        <button 
+                          key={q}
+                          onClick={() => handleZenChat(undefined, q)}
+                          className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-full text-xs font-bold transition-colors"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {zenChat.map((msg, i) => (
+                  <motion.div 
+                    key={i}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${
+                      msg.role === 'user' 
+                        ? 'bg-secondary text-white rounded-tr-none' 
+                        : 'bg-white/5 text-zinc-200 rounded-tl-none border border-white/10'
+                    }`}>
+                      {msg.content}
+                    </div>
+                  </motion.div>
+                ))}
+                {isZenLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
+                      <Loader2 className="animate-spin text-secondary" size={20} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleZenChat} className="relative mt-4">
+                <input 
+                  type="text"
+                  value={zenQuery}
+                  onChange={(e) => setZenQuery(e.target.value)}
+                  placeholder="Tell me what's on your mind..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-6 pr-16 text-sm focus:outline-none focus:border-secondary transition-colors"
+                />
+                <button 
+                  type="submit"
+                  disabled={isZenLoading || !zenQuery.trim()}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-secondary hover:bg-secondary/10 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <ArrowRight size={20} />
+                </button>
+              </form>
+            </div>
+
+            {/* Safety Note */}
+            <div className="flex items-start gap-3 p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl">
+              <ShieldCheck className="text-blue-400 flex-shrink-0" size={18} />
+              <p className="text-[10px] text-blue-300/60 leading-relaxed uppercase font-bold tracking-wider">
+                Note: I am an AI assistant, not a medical professional. If you are in a crisis, please reach out to local emergency services or a mental health professional. You are not alone.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {activeTab === 'search' && (
           <div className="space-y-12">
             {/* Hero Section */}
@@ -688,12 +1021,13 @@ export default function App() {
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-12"
+                className="mb-12 group cursor-default"
               >
-                <h2 className="hero-title mb-6">
-                  SEARCH<br /><span className="neon-text">BEYOND.</span>
+                <h2 className="hero-title mb-6 select-none">
+                  <span className="block animate-glitch">SEARCH</span>
+                  <span className="neon-text block animate-glitch" style={{ animationDelay: '0.1s' }}>BEYOND.</span>
                 </h2>
-                <p className="text-xl text-muted font-medium">The meta-engine for the next generation.</p>
+                <p className="text-xl text-muted font-medium uppercase tracking-[0.2em]">The meta-engine for the next generation.</p>
               </motion.div>
             )}
 
@@ -709,72 +1043,102 @@ export default function App() {
             )}
 
             {/* Search Bar */}
-            <motion.div 
-              layout
-              className="relative group max-w-3xl w-full"
-            >
-              <div className="relative w-full">
-                <form onSubmit={performSearch} className="relative w-full">
+            <div className="space-y-4">
+              <motion.div 
+                layout
+                className="relative group max-w-3xl w-full"
+              >
+                <div className="relative w-full">
+                  <form onSubmit={performSearch} className="relative w-full">
+                    <input 
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search the multiverse..."
+                      className="search-input-theme pr-32 sm:pr-44"
+                    />
+                    <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2">
+                      <motion.button 
+                        type="button"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => startListening('search')}
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-all ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'hover:bg-white/5 text-muted'}`}
+                        title="Voice Search"
+                      >
+                        <Mic size={18} className="sm:hidden" />
+                        <Mic size={20} className="hidden sm:block" />
+                      </motion.button>
+                      <motion.button 
+                        type="button"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
+                        title="Analyze Image"
+                      >
+                        <Camera size={18} className="sm:hidden" />
+                        <Camera size={20} className="hidden sm:block" />
+                      </motion.button>
+                      <motion.button 
+                        type="button"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => videoInputRef.current?.click()}
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
+                        title="Analyze Video"
+                      >
+                        <Video size={18} className="sm:hidden" />
+                        <Video size={20} className="hidden sm:block" />
+                      </motion.button>
+                      <motion.button 
+                        type="submit"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        disabled={isSearching}
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
+                      >
+                        <Search className="text-white" size={20} />
+                      </motion.button>
+                    </div>
+                  </form>
                   <input 
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search the multiverse..."
-                    className="search-input-theme pr-32 sm:pr-44"
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                    className="hidden"
                   />
-                  <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => startListening('search')}
-                      className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-all ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'hover:bg-white/5 text-muted'}`}
-                      title="Voice Search"
-                    >
-                      <Mic size={18} className="sm:hidden" />
-                      <Mic size={20} className="hidden sm:block" />
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
-                      title="Analyze Image"
-                    >
-                      <Camera size={18} className="sm:hidden" />
-                      <Camera size={20} className="hidden sm:block" />
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => videoInputRef.current?.click()}
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
-                      title="Analyze Video"
-                    >
-                      <Video size={18} className="sm:hidden" />
-                      <Video size={20} className="hidden sm:block" />
-                    </button>
-                    <button 
-                      type="submit"
-                      disabled={isSearching}
-                      className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
-                    >
-                      <Search className="text-white" size={20} />
-                    </button>
+                  <input 
+                    type="file"
+                    ref={videoInputRef}
+                    onChange={handleVideoUpload}
+                    accept="video/*"
+                    className="hidden"
+                  />
+                </div>
+              </motion.div>
+
+              {/* Multiverse Feed */}
+              <div className="max-w-3xl w-full overflow-hidden relative py-2">
+                <div className="flex items-center gap-8 whitespace-nowrap animate-marquee">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-accent">
+                    <Globe size={12} /> Live Multiverse Activity:
                   </div>
-                </form>
-                <input 
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  className="hidden"
-                />
-                <input 
-                  type="file"
-                  ref={videoInputRef}
-                  onChange={handleVideoUpload}
-                  accept="video/*"
-                  className="hidden"
-                />
+                  {globalActivity.map((act) => (
+                    <span key={act.id} className="text-[10px] font-bold uppercase tracking-widest text-muted/60">
+                      • {act.query}
+                    </span>
+                  ))}
+                  {/* Duplicate for seamless loop */}
+                  {globalActivity.map((act) => (
+                    <span key={`${act.id}-dup`} className="text-[10px] font-bold uppercase tracking-widest text-muted/60">
+                      • {act.query}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </motion.div>
+            </div>
 
             {/* Image/Video Preview */}
             <div className="flex flex-wrap gap-4">
@@ -856,74 +1220,97 @@ export default function App() {
                       animate={{ scale: 1, opacity: 1 }}
                       className="glass p-4 sm:p-8 rounded-3xl relative overflow-hidden group border border-white/10 w-full"
                     >
-                      <div className="ai-badge-theme">AI Synthetic Insight</div>
-                      <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
-                      {isAiLoading ? (
-                        <div className="space-y-4">
-                          <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
-                          <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
-                          <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {/* Chat History */}
-                          <div className="space-y-4">
-                            {chatHistory.map((msg, i) => (
-                              <motion.div 
-                                key={i}
-                                initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                              >
-                                <div className={`max-w-[85%] p-4 rounded-2xl ${
-                                  msg.role === 'user' 
-                                    ? 'bg-accent text-black font-bold' 
-                                    : 'bg-white/5 text-zinc-300 border border-white/10'
-                                }`}>
-                                  {msg.content}
-                                </div>
-                              </motion.div>
-                            ))}
-                            {isFollowUpLoading && (
-                              <div className="flex justify-start">
-                                <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                                  <Loader2 className="animate-spin text-accent" size={20} />
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="ai-badge-theme">AI Synthetic Insight // {persona} mode</div>
+                        {aiInsight && (
+                          <button 
+                            onClick={shareVibe}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all"
+                          >
+                            <Share2 size={12} /> Share Vibe Card
+                          </button>
+                        )}
+                      </div>
 
-                          {/* Follow-up Input */}
-                          <form onSubmit={handleFollowUp} className="relative mt-4">
-                            <div className="relative flex items-center">
-                              <input 
-                                type="text"
-                                value={followUpQuery}
-                                onChange={(e) => setFollowUpQuery(e.target.value)}
-                                placeholder="Ask more about this..."
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 pr-24 text-sm focus:outline-none focus:border-accent transition-colors"
-                              />
-                              <div className="absolute right-2 flex items-center gap-1">
-                                <button 
-                                  type="button"
-                                  onClick={() => startListening('followup')}
-                                  className={`p-2 rounded-lg transition-all ${isListening ? 'text-red-500 animate-pulse' : 'text-muted hover:text-white'}`}
-                                  title="Voice Input"
+                      <div ref={cardRef} className="relative z-10 p-6 bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
+                        {/* Shimmer Effect when loading */}
+                        {isAiLoading && <div className="absolute inset-0 shimmer pointer-events-none" />}
+                        
+                        <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
+                        {isAiLoading ? (
+                          <div className="space-y-4">
+                            <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
+                            <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
+                            <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            {/* Chat History */}
+                            <div className="space-y-4">
+                              {chatHistory.map((msg, i) => (
+                                <motion.div 
+                                  key={i}
+                                  initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                                 >
-                                  <Mic size={18} />
-                                </button>
-                                <button 
-                                  type="submit"
-                                  disabled={isFollowUpLoading || !followUpQuery.trim()}
-                                  className="p-2 text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                  <ArrowRight size={18} />
-                                </button>
-                              </div>
+                                  <div className={`max-w-[85%] p-4 rounded-2xl ${
+                                    msg.role === 'user' 
+                                      ? 'bg-accent text-black font-bold' 
+                                      : 'bg-white/5 text-zinc-300 border border-white/10'
+                                  }`}>
+                                    {msg.content}
+                                  </div>
+                                </motion.div>
+                              ))}
+                              {isFollowUpLoading && (
+                                <div className="flex justify-start">
+                                  <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
+                                    <Loader2 className="animate-spin text-accent" size={20} />
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </form>
+
+                            {/* Follow-up Input */}
+                            <form onSubmit={handleFollowUp} className="relative mt-4">
+                              <div className="relative flex items-center">
+                                <input 
+                                  type="text"
+                                  value={followUpQuery}
+                                  onChange={(e) => setFollowUpQuery(e.target.value)}
+                                  placeholder="Ask more about this..."
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 pr-24 text-sm focus:outline-none focus:border-accent transition-colors"
+                                />
+                                <div className="absolute right-2 flex items-center gap-1">
+                                  <button 
+                                    type="button"
+                                    onClick={() => startListening('followup')}
+                                    className={`p-2 rounded-lg transition-all ${isListening ? 'text-red-500 animate-pulse' : 'text-muted hover:text-white'}`}
+                                    title="Voice Input"
+                                  >
+                                    <Mic size={18} />
+                                  </button>
+                                  <button 
+                                    type="submit"
+                                    disabled={isFollowUpLoading || !followUpQuery.trim()}
+                                    className="p-2 text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50"
+                                  >
+                                    <ArrowRight size={18} />
+                                  </button>
+                                </div>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+
+                        {/* Card Branding for Share */}
+                        <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">VibeSearch // Meta OS</div>
+                          <div className="text-[10px] font-bold text-muted uppercase tracking-widest">Timeline: {new Date().toLocaleDateString()}</div>
                         </div>
-                      )}
+                      </div>
+                      
                       {/* Decor */}
                       <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-secondary/20 blur-[80px] rounded-full pointer-events-none" />
                     </motion.div>
@@ -932,6 +1319,42 @@ export default function App() {
                   <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8">
                     {/* Web Results Column or Analysis */}
                     <div className="space-y-6">
+                      {/* Image Results Row */}
+                      {imageResults.length > 0 && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-4"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <ImageIcon className="text-accent" size={20} />
+                            <span className="text-[10px] font-black text-accent uppercase tracking-[0.2em]">Visual Multiverse</span>
+                          </div>
+                          <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                            {imageResults.map((img, i) => (
+                              <motion.a
+                                key={i}
+                                href={img.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                whileHover={{ scale: 1.05, y: -5 }}
+                                className="flex-shrink-0 w-40 h-40 rounded-2xl overflow-hidden border border-white/10 glass relative group"
+                              >
+                                <img 
+                                  src={img.imageUrl} 
+                                  alt={img.title}
+                                  className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end">
+                                  <p className="text-[10px] font-bold text-white truncate">{img.title}</p>
+                                </div>
+                              </motion.a>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+
                       {videoAnalysis && (
                         <motion.div 
                           initial={{ opacity: 0, y: 20 }}
@@ -969,12 +1392,14 @@ export default function App() {
                       {results.map((result, idx) => (
                         <motion.div 
                           key={result.id}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.1 }}
-                          className="border border-muted p-4 sm:p-6 rounded-2xl hover:border-secondary transition-colors group relative"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ y: -5, scale: 1.01 }}
+                          transition={{ delay: idx * 0.05 }}
+                          className="border border-muted p-4 sm:p-6 rounded-2xl hover:border-secondary transition-all duration-300 group relative glass overflow-hidden"
                         >
-                          <div className="flex justify-between items-start mb-4">
+                          <div className="absolute inset-0 shimmer opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                          <div className="flex justify-between items-start mb-4 relative z-10">
                             <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">{result.source}</span>
                             <button 
                               onClick={() => toggleBookmark(result)}
@@ -984,10 +1409,24 @@ export default function App() {
                             </button>
                           </div>
                           <a href={result.url} target="_blank" rel="noopener noreferrer" className="block group">
-                            <h3 className="text-xl font-bold mb-2 group-hover:text-accent transition-colors flex items-center gap-2">
-                              {result.title} <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </h3>
-                            <p className="text-zinc-400 text-sm leading-relaxed">{result.snippet}</p>
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              {result.imageUrl && (
+                                <div className="w-full sm:w-32 h-32 sm:h-24 rounded-xl overflow-hidden flex-shrink-0 border border-white/5">
+                                  <img 
+                                    src={result.imageUrl} 
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
+                                    alt="" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex-1">
+                                <h3 className="text-xl font-bold mb-2 group-hover:text-accent transition-colors flex items-center gap-2">
+                                  {result.title} <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </h3>
+                                <p className="text-zinc-400 text-sm leading-relaxed">{result.snippet}</p>
+                              </div>
+                            </div>
                           </a>
                         </motion.div>
                       ))}
