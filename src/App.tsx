@@ -24,9 +24,11 @@ import {
   Upload,
   Camera,
   Loader2,
-  Mic
+  Mic,
+  Video
 } from 'lucide-react';
 import Groq from "groq-sdk";
+import { GoogleGenAI } from "@google/genai";
 import { 
   auth, 
   db, 
@@ -103,7 +105,11 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [imageAnalysis, setImageAnalysis] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
+  const [videoAnalysis, setVideoAnalysis] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
@@ -462,6 +468,50 @@ export default function App() {
     }
   };
 
+  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setSelectedVideo(base64);
+        analyzeVideo(base64, file.type);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const analyzeVideo = async (base64Video: string, mimeType: string) => {
+    setIsVideoAnalyzing(true);
+    setVideoAnalysis(null);
+    setActiveTab('search');
+    setResults([]);
+
+    try {
+      const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const base64Data = base64Video.split(',')[1];
+
+      const response = await gemini.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: [
+          {
+            parts: [
+              { text: "Analyze this video content. What are the key moments? What is the overall vibe? Summarize it in a Gen Z, punchy style with emojis. Keep it short." },
+              { inlineData: { data: base64Data, mimeType } }
+            ]
+          }
+        ]
+      });
+
+      setVideoAnalysis(response.text || "The multiverse couldn't decode this video. 📼");
+    } catch (error) {
+      console.error("Video analysis failed", error);
+      setVideoAnalysis("Failed to analyze video. The timeline is corrupted. 📼💀");
+    } finally {
+      setIsVideoAnalyzing(false);
+    }
+  };
+
   const toggleBookmark = async (result: SearchResult) => {
     if (!user) return;
     
@@ -692,6 +742,15 @@ export default function App() {
                       <Camera size={20} className="hidden sm:block" />
                     </button>
                     <button 
+                      type="button"
+                      onClick={() => videoInputRef.current?.click()}
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
+                      title="Analyze Video"
+                    >
+                      <Video size={18} className="sm:hidden" />
+                      <Video size={20} className="hidden sm:block" />
+                    </button>
+                    <button 
                       type="submit"
                       disabled={isSearching}
                       className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
@@ -707,37 +766,70 @@ export default function App() {
                   accept="image/*"
                   className="hidden"
                 />
+                <input 
+                  type="file"
+                  ref={videoInputRef}
+                  onChange={handleVideoUpload}
+                  accept="video/*"
+                  className="hidden"
+                />
               </div>
             </motion.div>
 
-            {/* Image Preview */}
-            <AnimatePresence>
-              {selectedImage && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="relative w-48 h-48 rounded-2xl overflow-hidden border-2 border-accent group"
-                >
-                  <img src={selectedImage} className="w-full h-full object-cover" alt="Selected" />
-                  <button 
-                    onClick={() => setSelectedImage(null)}
-                    className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            {/* Image/Video Preview */}
+            <div className="flex flex-wrap gap-4">
+              <AnimatePresence>
+                {selectedImage && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="relative w-48 h-48 rounded-2xl overflow-hidden border-2 border-accent group"
                   >
-                    <X size={16} />
-                  </button>
-                  {isAnalyzingImage && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                      <Loader2 className="text-accent animate-spin" size={32} />
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    <img src={selectedImage} className="w-full h-full object-cover" alt="Selected" />
+                    <button 
+                      onClick={() => setSelectedImage(null)}
+                      className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={16} />
+                    </button>
+                    {isAnalyzingImage && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <Loader2 className="text-accent animate-spin" size={32} />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {selectedVideo && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="relative w-48 h-48 rounded-2xl overflow-hidden border-2 border-secondary group"
+                  >
+                    <video src={selectedVideo} className="w-full h-full object-cover" />
+                    <button 
+                      onClick={() => setSelectedVideo(null)}
+                      className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={16} />
+                    </button>
+                    {isVideoAnalyzing && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <Loader2 className="text-secondary animate-spin" size={32} />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Results Grid */}
             <AnimatePresence mode="wait">
-              {isSearching || isAnalyzingImage ? (
+              {isSearching || isAnalyzingImage || isVideoAnalyzing ? (
                 <motion.div 
                   key="loading"
                   initial={{ opacity: 0 }}
@@ -745,12 +837,12 @@ export default function App() {
                   exit={{ opacity: 0 }}
                   className="flex flex-col items-center justify-center py-20 gap-4"
                 >
-                  <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
+                  <div className={`w-12 h-12 border-4 ${isVideoAnalyzing ? 'border-secondary' : 'border-accent'} border-t-transparent rounded-full animate-spin`} />
                   <p className="text-muted font-black uppercase tracking-widest animate-pulse">
-                    {isAnalyzingImage ? 'ANALYZING VIBES...' : 'CRAWLING MULTIVERSE...'}
+                    {isVideoAnalyzing ? 'DECODING VIDEO...' : isAnalyzingImage ? 'ANALYZING VIBES...' : 'CRAWLING MULTIVERSE...'}
                   </p>
                 </motion.div>
-              ) : (results.length > 0 || imageAnalysis) ? (
+              ) : (results.length > 0 || imageAnalysis || videoAnalysis) ? (
                 <motion.div 
                   key="results"
                   initial={{ opacity: 0 }}
@@ -838,8 +930,25 @@ export default function App() {
                   )}
 
                   <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8">
-                    {/* Web Results Column or Image Analysis */}
+                    {/* Web Results Column or Analysis */}
                     <div className="space-y-6">
+                      {videoAnalysis && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="border-2 border-secondary p-6 sm:p-8 rounded-3xl bg-secondary/5 relative overflow-hidden"
+                        >
+                          <div className="flex items-center gap-2 mb-6">
+                            <Video className="text-secondary" size={24} />
+                            <span className="text-xs font-black text-secondary uppercase tracking-[0.2em]">Video Intelligence</span>
+                          </div>
+                          <p className="text-xl sm:text-2xl font-bold leading-relaxed">
+                            {videoAnalysis}
+                          </p>
+                          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-secondary/20 blur-[60px] rounded-full pointer-events-none" />
+                        </motion.div>
+                      )}
+
                       {imageAnalysis && (
                         <motion.div 
                           initial={{ opacity: 0, y: 20 }}
