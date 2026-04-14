@@ -25,7 +25,7 @@ import {
   Camera,
   Loader2
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { 
   auth, 
   db, 
@@ -75,19 +75,18 @@ interface BookmarkItem {
 // AI Service
 const getApiKey = () => {
   try {
-    return process.env.GEMINI_API_KEY || 
+    return (import.meta as any).env.VITE_GROQ_API_KEY || 
            (import.meta as any).env.VITE_AI_KEY || 
-           (import.meta as any).env.VITE_GEMINI_API_KEY ||
            (import.meta as any).env.VITE_API_KEY;
   } catch {
-    return (import.meta as any).env.VITE_AI_KEY || 
-           (import.meta as any).env.VITE_GEMINI_API_KEY ||
+    return (import.meta as any).env.VITE_GROQ_API_KEY || 
+           (import.meta as any).env.VITE_AI_KEY || 
            (import.meta as any).env.VITE_API_KEY;
   }
 };
 
-const GEMINI_KEY = getApiKey();
-const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
+const GROQ_KEY = getApiKey();
+const ai = GROQ_KEY ? new Groq({ apiKey: GROQ_KEY, dangerouslyAllowBrowser: true }) : null;
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -228,19 +227,21 @@ export default function App() {
 
       // 2. Get AI Insights (Async)
       if (!ai) {
-        setAiInsight("AI Insight is unavailable in this environment (Missing API Key). 🛸");
+        setAiInsight("Groq API Key is missing. Please add VITE_GROQ_API_KEY to your secrets. 🛸");
         setIsAiLoading(false);
         return;
       }
 
       try {
-        const getInsight = async (useGrounding: boolean) => {
-          const aiPromise = ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            tools: useGrounding ? [{ googleSearch: {} }] as any : [],
-            toolConfig: useGrounding ? { includeServerSideToolInvocations: true } as any : undefined,
-            contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}". Keep it under 100 words. Use emojis.` }] }]
-          } as any);
+        const getInsight = async () => {
+          const aiPromise = ai.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              { role: "system", content: "You are a Gen Z AI assistant providing punchy, short insights for a search engine called VibeSearch. Use emojis and stay under 100 words." },
+              { role: "user", content: `Provide a punchy summary and insight about "${searchQuery}".` }
+            ],
+            max_tokens: 300
+          });
 
           const timeoutPromise = new Promise((_, reject) => 
             setTimeout(() => reject(new Error("AI Timeout")), 12000)
@@ -249,17 +250,8 @@ export default function App() {
           return await Promise.race([aiPromise, timeoutPromise]) as any;
         };
 
-        let result;
-        try {
-          // Try with grounding first
-          result = await getInsight(true);
-        } catch (groundingError) {
-          console.warn("Grounded search failed, trying fallback...", groundingError);
-          // Fallback to regular AI generation
-          result = await getInsight(false);
-        }
-        
-        const insight = result?.text || "The multiverse is quiet on this one. 🌌";
+        const result = await getInsight();
+        const insight = result?.choices?.[0]?.message?.content || "The multiverse is quiet on this one. 🌌";
         setAiInsight(insight);
 
         // 3. Save to History
@@ -303,25 +295,28 @@ export default function App() {
     setResults([]); // Clear search results when analyzing image
 
     try {
-      const base64Data = base64Image.split(',')[1];
+      const base64Data = base64Image; // Groq can handle data URLs or base64
       
       if (!ai) {
-        setImageAnalysis("AI Analysis is unavailable (Missing API Key). 💀");
+        setImageAnalysis("Groq API Key is missing for analysis. 💀");
         return;
       }
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "Analyze this image in a Gen Z, punchy style. What's the vibe? What's in it? Keep it short and shareable. Use emojis." },
-            { inlineData: { data: base64Data, mimeType: "image/jpeg" } }
-          ]
-        }]
+      const result = await ai.chat.completions.create({
+        model: "llama-3.2-11b-vision-preview",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Analyze this image in a Gen Z, punchy style. What's the vibe? What's in it? Keep it short and shareable. Use emojis." },
+              { type: "image_url", image_url: { url: base64Data } }
+            ]
+          }
+        ],
+        max_tokens: 300
       });
       
-      setImageAnalysis(result.text);
+      setImageAnalysis(result.choices[0].message.content);
     } catch (error) {
       console.error("Image analysis failed", error);
       setImageAnalysis("Failed to analyze image. The multiverse is glitching. 💀");
