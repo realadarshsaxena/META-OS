@@ -19,11 +19,7 @@ import {
   Twitter,
   Instagram,
   ExternalLink,
-  Plus,
-  Image as ImageIcon,
-  Upload,
-  Camera,
-  Loader2
+  Plus
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -85,10 +81,6 @@ export default function App() {
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'bookmarks'>('search');
   const [showProfile, setShowProfile] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
-  const [imageAnalysis, setImageAnalysis] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auth Listener
   useEffect(() => {
@@ -170,13 +162,12 @@ export default function App() {
       ];
       setResults(mockResults);
 
-      // 2. Get AI Insights with Google Search Grounding
-      const result = await ai.models.generateContent({
+      // 2. Get AI Insights
+      const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        tools: [{ google_search: {} }] as any,
-        contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}" using the latest information. Keep it under 100 words. Use emojis.` }] }]
-      } as any);
-      const insight = result.text;
+        contents: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}". Keep it under 100 words. Use emojis.`,
+      });
+      const insight = response.text;
       setAiInsight(insight);
 
       // 3. Save to History
@@ -192,47 +183,6 @@ export default function App() {
       console.error("Search failed", error);
     } finally {
       setIsSearching(false);
-    }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-        analyzeImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const analyzeImage = async (base64Image: string) => {
-    setIsAnalyzingImage(true);
-    setImageAnalysis(null);
-    setActiveTab('search');
-    setResults([]); // Clear search results when analyzing image
-
-    try {
-      const base64Data = base64Image.split(',')[1];
-      
-      const result = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "Analyze this image in a Gen Z, punchy style. What's the vibe? What's in it? Keep it short and shareable. Use emojis." },
-            { inlineData: { data: base64Data, mimeType: "image/jpeg" } }
-          ]
-        }]
-      });
-      
-      setImageAnalysis(result.text);
-    } catch (error) {
-      console.error("Image analysis failed", error);
-      setImageAnalysis("Failed to analyze image. The multiverse is glitching. 💀");
-    } finally {
-      setIsAnalyzingImage(false);
     }
   };
 
@@ -393,73 +343,29 @@ export default function App() {
             {/* Search Bar */}
             <motion.div 
               layout
-              className="relative group max-w-3xl flex gap-4"
+              className="relative group max-w-3xl"
             >
-              <div className="relative flex-1">
-                <form onSubmit={performSearch}>
-                  <input 
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search the multiverse..."
-                    className="search-input-theme pr-32"
-                  />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-white/5 text-muted transition-colors"
-                      title="Analyze Image"
-                    >
-                      <Camera size={20} />
-                    </button>
-                    <button 
-                      type="submit"
-                      disabled={isSearching}
-                      className="w-12 h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
-                    >
-                      <Search className="text-white" size={24} />
-                    </button>
-                  </div>
-                </form>
+              <form onSubmit={performSearch}>
                 <input 
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  className="hidden"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search the multiverse..."
+                  className="search-input-theme"
                 />
-              </div>
-            </motion.div>
-
-            {/* Image Preview */}
-            <AnimatePresence>
-              {selectedImage && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="relative w-48 h-48 rounded-2xl overflow-hidden border-2 border-accent group"
+                <button 
+                  type="submit"
+                  disabled={isSearching}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-secondary rounded-xl flex items-center justify-center hover:bg-secondary/80 transition-colors disabled:opacity-50 neon-glow"
                 >
-                  <img src={selectedImage} className="w-full h-full object-cover" alt="Selected" />
-                  <button 
-                    onClick={() => setSelectedImage(null)}
-                    className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X size={16} />
-                  </button>
-                  {isAnalyzingImage && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                      <Loader2 className="text-accent animate-spin" size={32} />
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <Search className="text-white" size={24} />
+                </button>
+              </form>
+            </motion.div>
 
             {/* Results Grid */}
             <AnimatePresence mode="wait">
-              {isSearching || isAnalyzingImage ? (
+              {isSearching ? (
                 <motion.div 
                   key="loading"
                   initial={{ opacity: 0 }}
@@ -468,36 +374,17 @@ export default function App() {
                   className="flex flex-col items-center justify-center py-20 gap-4"
                 >
                   <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-                  <p className="text-muted font-black uppercase tracking-widest animate-pulse">
-                    {isAnalyzingImage ? 'ANALYZING VIBES...' : 'CRAWLING MULTIVERSE...'}
-                  </p>
+                  <p className="text-muted font-black uppercase tracking-widest animate-pulse">CRAWLING MULTIVERSE...</p>
                 </motion.div>
-              ) : (results.length > 0 || imageAnalysis) ? (
+              ) : results.length > 0 ? (
                 <motion.div 
                   key="results"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8 mt-12"
                 >
-                  {/* Web Results Column or Image Analysis */}
+                  {/* Web Results Column */}
                   <div className="space-y-6">
-                    {imageAnalysis && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="border-2 border-accent p-8 rounded-3xl bg-accent/5 relative overflow-hidden"
-                      >
-                        <div className="flex items-center gap-2 mb-6">
-                          <Camera className="text-accent" size={24} />
-                          <span className="text-xs font-black text-accent uppercase tracking-[0.2em]">Visual Analysis</span>
-                        </div>
-                        <p className="text-2xl font-bold leading-relaxed">
-                          {imageAnalysis}
-                        </p>
-                        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-accent/20 blur-[60px] rounded-full pointer-events-none" />
-                      </motion.div>
-                    )}
-
                     {results.map((result, idx) => (
                       <motion.div 
                         key={result.id}
@@ -527,7 +414,7 @@ export default function App() {
 
                   {/* AI Insight Column */}
                   <div className="space-y-6">
-                    {(aiInsight || isSearching) && (
+                    {aiInsight && (
                       <motion.div 
                         initial={{ scale: 0.95, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
@@ -535,17 +422,9 @@ export default function App() {
                       >
                         <div className="ai-badge-theme">AI Synthetic Insight</div>
                         <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
-                        {isSearching ? (
-                          <div className="space-y-4">
-                            <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
-                            <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
-                            <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
-                          </div>
-                        ) : (
-                          <p className="text-zinc-300 leading-relaxed font-medium">
-                            {aiInsight}
-                          </p>
-                        )}
+                        <p className="text-zinc-300 leading-relaxed font-medium">
+                          {aiInsight}
+                        </p>
                         {/* Decor */}
                         <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-secondary/20 blur-[80px] rounded-full pointer-events-none" />
                       </motion.div>
