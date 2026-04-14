@@ -73,7 +73,8 @@ interface BookmarkItem {
 }
 
 // AI Service
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -94,6 +95,19 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Safety Reset for Loading States
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (isSearching || isAiLoading || isAnalyzingImage) {
+      timeout = setTimeout(() => {
+        setIsSearching(false);
+        setIsAiLoading(false);
+        setIsAnalyzingImage(false);
+      }, 25000); // 25s hard limit
+    }
+    return () => clearTimeout(timeout);
+  }, [isSearching, isAiLoading, isAnalyzingImage]);
 
   // Connection Test
   useEffect(() => {
@@ -200,13 +214,37 @@ export default function App() {
       setIsSearching(false); // Stop main loading as results are ready
 
       // 2. Get AI Insights (Async)
+      if (!ai) {
+        setAiInsight("AI Insight is unavailable in this environment (Missing API Key). 🛸");
+        setIsAiLoading(false);
+        return;
+      }
+
       try {
-        const result = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          tools: [{ googleSearch: {} }] as any,
-          toolConfig: { includeServerSideToolInvocations: true } as any,
-          contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}" using the latest information. Keep it under 100 words. Use emojis.` }] }]
-        } as any);
+        const getInsight = async (useGrounding: boolean) => {
+          const aiPromise = ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            tools: useGrounding ? [{ googleSearch: {} }] as any : [],
+            toolConfig: useGrounding ? { includeServerSideToolInvocations: true } as any : undefined,
+            contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}". Keep it under 100 words. Use emojis.` }] }]
+          } as any);
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("AI Timeout")), 12000)
+          );
+
+          return await Promise.race([aiPromise, timeoutPromise]) as any;
+        };
+
+        let result;
+        try {
+          // Try with grounding first
+          result = await getInsight(true);
+        } catch (groundingError) {
+          console.warn("Grounded search failed, trying fallback...", groundingError);
+          // Fallback to regular AI generation
+          result = await getInsight(false);
+        }
         
         const insight = result?.text || "The multiverse is quiet on this one. 🌌";
         setAiInsight(insight);
@@ -254,6 +292,11 @@ export default function App() {
     try {
       const base64Data = base64Image.split(',')[1];
       
+      if (!ai) {
+        setImageAnalysis("AI Analysis is unavailable (Missing API Key). 💀");
+        return;
+      }
+
       const result = await ai.models.generateContent({
         model: "gemini-3.1-pro-preview",
         contents: [{
