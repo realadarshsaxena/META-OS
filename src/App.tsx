@@ -181,22 +181,29 @@ export default function App() {
       setResults(mockResults);
 
       // 2. Get AI Insights with Google Search Grounding
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        tools: [{ google_search: {} }] as any,
-        contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}" using the latest information. Keep it under 100 words. Use emojis.` }] }]
-      } as any);
-      const insight = result.text;
-      setAiInsight(insight);
+      try {
+        const result = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          tools: [{ googleSearch: {} }] as any,
+          toolConfig: { includeServerSideToolInvocations: true } as any,
+          contents: [{ role: "user", parts: [{ text: `Provide a punchy, Gen Z style summary and insight about "${searchQuery}" using the latest information. Keep it under 100 words. Use emojis.` }] }]
+        } as any);
+        
+        const insight = result?.text || "The multiverse is quiet on this one. 🌌";
+        setAiInsight(insight);
 
-      // 3. Save to History
-      if (user) {
-        await addDoc(collection(db, `users/${user.uid}/history`), {
-          uid: user.uid,
-          query: searchQuery,
-          timestamp: serverTimestamp(),
-          aiInsight: insight
-        });
+        // 3. Save to History
+        if (user) {
+          await addDoc(collection(db, `users/${user.uid}/history`), {
+            uid: user.uid,
+            query: searchQuery,
+            timestamp: serverTimestamp(),
+            aiInsight: insight
+          });
+        }
+      } catch (aiError) {
+        console.error("AI Insight failed", aiError);
+        setAiInsight("AI is currently vibing elsewhere. Check back in a bit! 🛸");
       }
     } catch (error) {
       console.error("Search failed", error);
@@ -505,79 +512,84 @@ export default function App() {
                   key="results"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8 mt-12"
+                  className="space-y-8 mt-12"
                 >
-                  {/* Web Results Column or Image Analysis */}
-                  <div className="space-y-6">
-                    {imageAnalysis && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="border-2 border-accent p-8 rounded-3xl bg-accent/5 relative overflow-hidden"
-                      >
-                        <div className="flex items-center gap-2 mb-6">
-                          <Camera className="text-accent" size={24} />
-                          <span className="text-xs font-black text-accent uppercase tracking-[0.2em]">Visual Analysis</span>
+                  {/* AI Insight Section (Full Width at Top) */}
+                  {(aiInsight || isSearching) && (
+                    <motion.div 
+                      initial={{ scale: 0.95, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="glass p-8 rounded-3xl relative overflow-hidden group border border-white/10 w-full"
+                    >
+                      <div className="ai-badge-theme">AI Synthetic Insight</div>
+                      <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
+                      {isSearching ? (
+                        <div className="space-y-4">
+                          <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
+                          <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
+                          <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
                         </div>
-                        <p className="text-2xl font-bold leading-relaxed">
-                          {imageAnalysis}
+                      ) : (
+                        <p className="text-zinc-300 leading-relaxed font-medium">
+                          {aiInsight}
                         </p>
-                        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-accent/20 blur-[60px] rounded-full pointer-events-none" />
-                      </motion.div>
-                    )}
+                      )}
+                      {/* Decor */}
+                      <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-secondary/20 blur-[80px] rounded-full pointer-events-none" />
+                    </motion.div>
+                  )}
 
-                    {results.map((result, idx) => (
-                      <motion.div 
-                        key={result.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.1 }}
-                        className="border border-muted p-6 rounded-2xl hover:border-secondary transition-colors group relative"
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">{result.source}</span>
-                          <button 
-                            onClick={() => toggleBookmark(result)}
-                            className={`p-2 rounded-lg transition-colors ${bookmarks.some(b => b.url === result.url) ? 'bg-accent text-black' : 'hover:bg-white/5 text-muted'}`}
-                          >
-                            <Bookmark size={16} />
-                          </button>
-                        </div>
-                        <a href={result.url} target="_blank" rel="noopener noreferrer" className="block group">
-                          <h3 className="text-xl font-bold mb-2 group-hover:text-accent transition-colors flex items-center gap-2">
-                            {result.title} <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </h3>
-                          <p className="text-zinc-400 text-sm leading-relaxed">{result.snippet}</p>
-                        </a>
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {/* AI Insight Column */}
-                  <div className="space-y-6">
-                    {(aiInsight || isSearching) && (
-                      <motion.div 
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="glass p-8 rounded-3xl relative overflow-hidden group border border-white/10 h-full"
-                      >
-                        <div className="ai-badge-theme">AI Synthetic Insight</div>
-                        <h3 className="text-2xl font-bold mb-4 neon-text">Multiverse Context</h3>
-                        {isSearching ? (
-                          <div className="space-y-4">
-                            <div className="h-4 bg-white/10 rounded w-full animate-pulse" />
-                            <div className="h-4 bg-white/10 rounded w-5/6 animate-pulse" />
-                            <div className="h-4 bg-white/10 rounded w-4/6 animate-pulse" />
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8">
+                    {/* Web Results Column or Image Analysis */}
+                    <div className="space-y-6">
+                      {imageAnalysis && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="border-2 border-accent p-8 rounded-3xl bg-accent/5 relative overflow-hidden"
+                        >
+                          <div className="flex items-center gap-2 mb-6">
+                            <Camera className="text-accent" size={24} />
+                            <span className="text-xs font-black text-accent uppercase tracking-[0.2em]">Visual Analysis</span>
                           </div>
-                        ) : (
-                          <p className="text-zinc-300 leading-relaxed font-medium">
-                            {aiInsight}
+                          <p className="text-2xl font-bold leading-relaxed">
+                            {imageAnalysis}
                           </p>
-                        )}
-                        {/* Decor */}
-                        <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-secondary/20 blur-[80px] rounded-full pointer-events-none" />
-                      </motion.div>
-                    )}
+                          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-accent/20 blur-[60px] rounded-full pointer-events-none" />
+                        </motion.div>
+                      )}
+
+                      {results.map((result, idx) => (
+                        <motion.div 
+                          key={result.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.1 }}
+                          className="border border-muted p-6 rounded-2xl hover:border-secondary transition-colors group relative"
+                        >
+                          <div className="flex justify-between items-start mb-4">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">{result.source}</span>
+                            <button 
+                              onClick={() => toggleBookmark(result)}
+                              className={`p-2 rounded-lg transition-colors ${bookmarks.some(b => b.url === result.url) ? 'bg-accent text-black' : 'hover:bg-white/5 text-muted'}`}
+                            >
+                              <Bookmark size={16} />
+                            </button>
+                          </div>
+                          <a href={result.url} target="_blank" rel="noopener noreferrer" className="block group">
+                            <h3 className="text-xl font-bold mb-2 group-hover:text-accent transition-colors flex items-center gap-2">
+                              {result.title} <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </h3>
+                            <p className="text-zinc-400 text-sm leading-relaxed">{result.snippet}</p>
+                          </a>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    {/* Secondary Column (Empty or for other widgets) */}
+                    <div className="hidden lg:block space-y-6">
+                      {/* You can add more widgets here later */}
+                    </div>
                   </div>
                 </motion.div>
               ) : (
