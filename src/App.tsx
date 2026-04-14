@@ -73,7 +73,7 @@ interface BookmarkItem {
 }
 
 // AI Service
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_KEY = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_AI_KEY;
 const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
 
 export default function App() {
