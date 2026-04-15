@@ -800,32 +800,32 @@ export default function App() {
             </div>
           )}
           
-          <div className="flex items-center gap-1 glass p-1.5 rounded-full border border-white/5">
+          <div className="flex items-center gap-1 glass p-1.5 rounded-full border border-white/5 max-w-[200px] sm:max-w-none overflow-x-auto scrollbar-hide">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setActiveTab(activeTab === 'features' ? 'search' : 'features')}
-              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'features' ? 'bg-white text-black' : 'text-muted hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 flex-shrink-0 ${activeTab === 'features' ? 'bg-white text-black' : 'text-muted hover:text-white'}`}
             >
-              <Sparkles size={12} /> Features
+              <Sparkles size={12} /> <span className="hidden xs:inline">Features</span>
             </motion.button>
-            <div className="w-[1px] h-3 bg-white/10 mx-1" />
+            <div className="w-[1px] h-3 bg-white/10 mx-1 flex-shrink-0" />
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setActiveTab(activeTab === 'zen' ? 'search' : 'zen')}
-              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 ${activeTab === 'zen' ? 'bg-secondary text-white' : 'text-muted hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex items-center gap-1.5 flex-shrink-0 ${activeTab === 'zen' ? 'bg-secondary text-white' : 'text-muted hover:text-white'}`}
             >
-              <Wind size={12} /> Zen Mode
+              <Wind size={12} /> <span className="hidden xs:inline">Zen Mode</span>
             </motion.button>
-            <div className="w-[1px] h-3 bg-white/10 mx-1" />
+            <div className="w-[1px] h-3 bg-white/10 mx-1 flex-shrink-0" />
             {(['hype', 'scholar', 'cynic'] as Persona[]).map((p) => (
               <motion.button
                 key={p}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setPersona(p)}
-                className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all ${persona === p ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}
+                className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all flex-shrink-0 ${persona === p ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}
               >
                 {p}
               </motion.button>
@@ -1133,9 +1133,9 @@ export default function App() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search the multiverse..."
-                      className="search-input-theme pr-32 sm:pr-44"
+                      className="search-input-theme pr-40 sm:pr-48"
                     />
-                    <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2">
+                    <div className="absolute right-1.5 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2">
                       <motion.button 
                         type="button"
                         whileHover={{ scale: 1.1 }}
@@ -1197,25 +1197,6 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* Multiverse Feed */}
-              <div className="max-w-3xl w-full overflow-hidden relative py-2">
-                <div className="flex items-center gap-8 whitespace-nowrap animate-marquee">
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-accent">
-                    <Globe size={12} /> Live Multiverse Activity:
-                  </div>
-                  {globalActivity.map((act) => (
-                    <span key={act.id} className="text-[10px] font-bold uppercase tracking-widest text-muted/60">
-                      • {act.query}
-                    </span>
-                  ))}
-                  {/* Duplicate for seamless loop */}
-                  {globalActivity.map((act) => (
-                    <span key={`${act.id}-dup`} className="text-[10px] font-bold uppercase tracking-widest text-muted/60">
-                      • {act.query}
-                    </span>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Image/Video Preview */}
@@ -1521,24 +1502,40 @@ export default function App() {
                   key="empty"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="py-12"
+                  className="py-12 space-y-12"
                 >
-                  <p className="text-muted text-[11px] font-black uppercase tracking-[0.2em] mb-8">Trending in the Multiverse</p>
-                  <div className="flex flex-col gap-4 max-w-md">
-                    {['#SpatialComputing', '#NeoMinimalism', '#AdarSaxenaDesign', '#FutureOfSearch'].map((tag, idx) => (
-                      <motion.button 
-                        key={tag}
-                        whileHover={{ x: 10 }}
-                        onClick={() => { setSearchQuery(tag.replace('#', '')); performSearch(); }}
-                        className="flex items-center justify-between p-5 premium-card group"
-                      >
-                        <div className="flex items-center gap-6">
-                          <span className="text-xl font-black text-white/10 group-hover:text-accent transition-colors">0{idx + 1}</span>
-                          <span className="font-bold text-lg tracking-tight">{tag}</span>
-                        </div>
-                        <ChevronRight size={18} className="text-muted group-hover:text-accent transition-all group-hover:translate-x-1" />
-                      </motion.button>
-                    ))}
+                  <div className="max-w-2xl space-y-6">
+                    <p className="text-muted text-[11px] font-black uppercase tracking-[0.2em]">About VibeSearch</p>
+                    <h3 className="text-3xl sm:text-5xl font-display font-bold leading-tight premium-gradient-text">
+                      A neural gateway to the multiverse of information.
+                    </h3>
+                    <p className="text-muted leading-relaxed text-lg">
+                      VibeSearch isn't just a search engine; it's a Meta OS for the curious. Built on the edge of neural computing, it synthesizes text, images, and video to provide insights that traditional search engines miss. Whether you're a scholar, a hype-beast, or a cynic, VibeSearch adapts to your frequency.
+                    </p>
+                  </div>
+
+                  <div className="premium-card p-8 sm:p-10 flex flex-col sm:flex-row items-center gap-8 border border-white/10">
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl overflow-hidden border-2 border-accent shadow-[0_0_30px_rgba(193,255,0,0.2)] flex-shrink-0">
+                      <img 
+                        src="https://api.dicebear.com/7.x/avataaars/svg?seed=Adarsh" 
+                        alt="Adarsh Saxena" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="space-y-4 text-center sm:text-left">
+                      <div>
+                        <p className="text-accent text-[10px] font-black uppercase tracking-[0.3em] mb-1">The Architect</p>
+                        <h4 className="text-2xl sm:text-3xl font-bold font-display">Adarsh Saxena</h4>
+                      </div>
+                      <p className="text-muted text-sm leading-relaxed max-w-md">
+                        Designed and engineered by Adarsh Saxena, a visionary developer pushing the boundaries of AI-driven interfaces and spatial computing. VibeSearch is a testament to his commitment to creating tools that empower human curiosity.
+                      </p>
+                      <div className="flex items-center justify-center sm:justify-start gap-4 pt-2">
+                        <a href="#" className="text-muted hover:text-white transition-colors"><Globe size={18} /></a>
+                        <a href="#" className="text-muted hover:text-white transition-colors"><Zap size={18} /></a>
+                        <a href="#" className="text-muted hover:text-white transition-colors"><Share2 size={18} /></a>
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               )}
